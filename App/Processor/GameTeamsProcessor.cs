@@ -47,46 +47,6 @@ namespace App.Processor
         {
           int homeTeamId, awayTeamId;
 
-          /*switch (gameId)
-          {
-            case 3276:
-              homeTeamId = 322;
-              awayTeamId = 321;
-              break;
-            case 3277:
-              homeTeamId = 324;
-              awayTeamId = 323;
-              break;
-            case 3278:
-              homeTeamId = 326;
-              awayTeamId = 325;
-              break;
-            case 3279:
-              homeTeamId = 328;
-              awayTeamId = 327;
-              break;
-            case 3316:
-              homeTeamId = 328;
-              awayTeamId = 327;
-              break;
-            case 3317:
-              homeTeamId = 326;
-              awayTeamId = 325;
-              break;
-            case 3318:
-              homeTeamId = 324;
-              awayTeamId = 323;
-              break;
-            case 3319:
-              homeTeamId = 322;
-              awayTeamId = 321;
-              break;
-            default:
-              homeTeamId = json["HOME_TEAM_ID"];
-              awayTeamId = json["AWAY_TEAM_ID"];
-              break;
-          };*/
-
           homeTeamId = json["HOME_TEAM_ID"];
           awayTeamId = json["AWAY_TEAM_ID"];
 

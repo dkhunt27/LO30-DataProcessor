@@ -5,6 +5,7 @@ using LO30.Data.Objects;
 using LO30.Services;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
 using System.IO;
@@ -14,6 +15,7 @@ namespace App
 {
   class Program
   {
+    private static string _lo30ReportingDBConnString;
     private static AccessDatabaseService _accessDatabaseService;
     private static Lo30DataService _lo30DataService;
     private static OutputService _outputService;
@@ -29,6 +31,7 @@ namespace App
 
       try
       {
+        _lo30ReportingDBConnString = System.Configuration.ConfigurationManager.ConnectionStrings["LO30ReportingDB"].ConnectionString;
         _accessDatabaseService = new AccessDatabaseService();
         _lo30DataService = new Lo30DataService();
         _outputService = new OutputService(_logFile);
@@ -43,32 +46,38 @@ namespace App
         _accessDatabaseService.SaveTablesToJson();
         Console.WriteLine("Saved Access DB to JSON Files");
 
-        // THEN CREATE SQL DB (if necessary) AND POPULATE WITH DATA
-        //Console.WriteLine("Seeding DB");
-        Seed();
-        //Console.WriteLine("Seeded DB");
+        // seed if empty database, otherwise just load new data
+        bool seed = false;
 
         // THEN PROCESS SCORE SHEETS
         int seasonId = 54;
         bool playoff = true;
         int startingGameId = 3324;
-        int endingGameId = 3339;
+        int endingGameId = 3346;
 
         //bool playoff = false;
         //int startingGameId = 3200;
         //int endingGameId = 3319;
 
-        // THEN CREATE SQL DB (if necessary) AND POPULATE WITH DATA
-        Console.WriteLine("Loading New Data");
-        LoadNewData(seasonId, playoff, startingGameId, endingGameId);
-        Console.WriteLine("Loaded New Data");
+        if (seed)
+        {
+          Console.WriteLine("Seeding DB");
+          Seed();
+          Console.WriteLine("Seeded DB");
+        }
+        else
+        {
+          Console.WriteLine("Loading New Data");
+          LoadNewData(seasonId, playoff, startingGameId, endingGameId);
+          Console.WriteLine("Loaded New Data");
+        }
 
         Console.WriteLine("Processing Score Sheets");
         ProcessScoreSheets(seasonId, playoff, startingGameId, endingGameId);
         Console.WriteLine("Processed Score Sheets");
 
         // UPDATE Current Status
-        //UpdateCurrentStatus();
+        UpdateCurrentStatus();
       }
       catch (Exception ex)
       {
@@ -153,6 +162,7 @@ namespace App
         if (playoffToProcess)
         {
           //_logger.Results.Add(_gameRostersProcessor.SaveOrUpdateGameRosters(context, lo30ContextService, folderPath, startingGameIdToProcess, endingGameIdToProcess));
+          // need to process scoresheetentrysubs after it has been loaded
         }
         else
         {
@@ -181,8 +191,45 @@ namespace App
         Print("Data Group 4: ScoreSheetEntrySubs Count:" + context.ScoreSheetEntrySubs.Count() + " SaveOrUpdated:" + countSaveOrUpdated);
         diffFromLast = DateTime.Now - last;
         Print("TimeToProcess: " + diffFromLast.ToString());
+
+        // process score sheet subs
+        var repo = new Lo30Repository(context, lo30ContextService);
+        var results = repo.ProcessScoreSheetEntrySubs(startingGameIdToProcess, endingGameIdToProcess);
+        Print("ProcessScoreSheets.ProcessScoreSheetEntrySubs Modified:" + results.modified + " Time:" + results.time);
         #endregion
 
+        if (playoffToProcess)
+        {
+          var gameRostersResult = new LoggerResult("GameRosters");
+
+          using (SqlConnection conn = new SqlConnection(_lo30ReportingDBConnString))
+          {
+            using (SqlCommand cmd = new SqlCommand("ProcessScoreSheetEntrySubsProcessedIntoGameRosters", conn))
+            {
+              cmd.CommandType = CommandType.StoredProcedure;
+
+              cmd.Parameters.Add("@StartingGameId", SqlDbType.Int).Value = startingGameIdToProcess;
+              cmd.Parameters.Add("@EndingGameId", SqlDbType.Int).Value = endingGameIdToProcess;
+              cmd.Parameters.Add("@DryRun", SqlDbType.Int).Value = 0;
+
+              conn.Open();
+              using (SqlDataReader rdr = cmd.ExecuteReader())
+              {
+                while (rdr.Read())
+                {
+                  int newRecordsInserted = Convert.ToInt32(rdr["NewRecordsInserted"]);
+                  int existingRecordsUpdated = Convert.ToInt32(rdr["ExistingRecordsUpdated"]);
+                  int processedRecordsMatchExistingRecords = Convert.ToInt32(rdr["ProcessedRecordsMatchExistingRecords"]);
+                  gameRostersResult.ProcessedCount = processedRecordsMatchExistingRecords + existingRecordsUpdated + newRecordsInserted;
+                  gameRostersResult.SavedOrUpdatedCount = existingRecordsUpdated + newRecordsInserted;
+                  gameRostersResult.End();
+                  _logger.Results.Add(gameRostersResult);
+                  Print("GameRosters Count:" + context.GameRosters.Count() + " Processed:" + gameRostersResult.ProcessedCount + " SaveOrUpdated:" + gameRostersResult.SavedOrUpdatedCount);
+                }
+              }
+            }
+          }
+        }
         diffFromFirst = DateTime.Now - first;
         Print("LoadNewData: TimeToProcess: " + diffFromFirst.ToString());
       }
@@ -1734,12 +1781,6 @@ namespace App
         {
           results = repo.ProcessScoreSheetEntryPenalties(startingGameId, endingGameId);
           Print("ProcessScoreSheets.ProcessScoreSheetEntryPenalties Modified:" + results.modified + " Time:" + results.time);
-        }
-
-        if (string.IsNullOrWhiteSpace(results.error))
-        {
-          results = repo.ProcessScoreSheetEntrySubs(startingGameId, endingGameId);
-          Print("ProcessScoreSheets.ProcessScoreSheetEntrySubs Modified:" + results.modified + " Time:" + results.time);
         }
 
         if (string.IsNullOrWhiteSpace(results.error))
