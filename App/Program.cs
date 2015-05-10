@@ -29,6 +29,9 @@ namespace App
     {
       _logFile = File.CreateText(@"C:\git\LO30\log.txt");
 
+      DateTime last = DateTime.Now;
+      TimeSpan diffFromLast = new TimeSpan();
+
       try
       {
         _lo30ReportingDBConnString = System.Configuration.ConfigurationManager.ConnectionStrings["LO30ReportingDB"].ConnectionString;
@@ -48,12 +51,14 @@ namespace App
 
         // seed if empty database, otherwise just load new data
         bool seed = false;
+        bool processScoreSheets = true;
+        bool updateStatuses = true;
 
         // THEN PROCESS SCORE SHEETS
         int seasonId = 54;
         bool playoff = true;
         int startingGameId = 3324;
-        int endingGameId = 3346;
+        int endingGameId = 3377;
 
         //bool playoff = false;
         //int startingGameId = 3200;
@@ -72,12 +77,18 @@ namespace App
           Console.WriteLine("Loaded New Data");
         }
 
-        Console.WriteLine("Processing Score Sheets");
-        ProcessScoreSheets(seasonId, playoff, startingGameId, endingGameId);
-        Console.WriteLine("Processed Score Sheets");
+        if (processScoreSheets)
+        {
+          Console.WriteLine("Processing Score Sheets");
+          ProcessScoreSheets(seasonId, playoff, startingGameId, endingGameId);
+          Console.WriteLine("Processed Score Sheets");
+        }
 
-        // UPDATE Current Status
-        UpdateCurrentStatus();
+        if (updateStatuses)
+        {
+          // UPDATE Current Status
+          UpdateCurrentStatus();
+        }
       }
       catch (Exception ex)
       {
@@ -94,6 +105,9 @@ namespace App
       }
       finally
       {
+        diffFromLast = DateTime.Now - last;
+        Print("Complete TimeToProcess: " + diffFromLast.ToString());
+
         _logFile.Close();
       }
     }
@@ -290,12 +304,6 @@ namespace App
 
         #region 0:PlayerStatsGame
         if (context.PlayerStatsGame.Count() == 0)
-        {
-        }
-        #endregion
-
-        #region 0:PlayerStatsSeason
-        if (context.PlayerStatsSeason.Count() == 0)
         {
         }
         #endregion
@@ -1270,6 +1278,231 @@ namespace App
         }
         #endregion
 
+        #region 4:PlayerStatsSeason...dependency on Season, Players, and Teams
+        /*if (context.PlayerStatsSeason.Count() == 0)
+        {
+          Print("Data Group 4: Creating PlayerStatsSeason");
+          last = DateTime.Now;
+
+           dynamic parsedJson = _accessDatabaseService.ParseObjectFromJsonFile(Path.Combine(folderPath, "FactPlayerStats.json"));
+          int count = parsedJson.Count;
+
+          Print("Access records to process:" + count);
+          
+          int saved = 0;
+
+          for (var d = 0; d < parsedJson.Count; d++)
+          {
+            if (d % 100 == 0) { Print("Access records processed:" + d); }
+            var json = parsedJson[d];
+
+            try
+            {
+              int seasonId = json["SEASON_ID"];
+              int playerId = json["PLAYER_ID"];
+
+              if (playerId == 512 || playerId == 545 || playerId == 571 || playerId == 170 || playerId == 211 || playerId == 213 || playerId == 215 || playerId == 217 || playerId == 282 || playerId == 381 || playerId == 426 || playerId == 432 || playerId == 767)
+              {
+                // do nothing, these guys do not have a player record
+              }
+              else
+              {
+                // get regular season player data
+                var teamIdTemp = json["REG_SEASON_TEAM_ID"];
+                int teamId;
+                if (teamIdTemp == null)
+                {
+                  teamId = -1;
+                }
+                else
+                {
+                  teamId = teamIdTemp;
+                }
+
+                int games = json["REG_SEASON_GAMES_PLAYED"];
+                int goals = json["REG_SEASON_GOALS"];
+                int assists = json["REG_SEASON_ASSISTS"];
+                int points = json["REG_SEASON_POINTS"];
+                int pim = json["REG_SEASON_PENALTY_MINUTES"];
+                int ppg = json["REG_SEASON_POWERPLAY_GOALS"];
+                int shg = json["REG_SEASON_SHORTHANDED_GOALS"];
+                int gwg = json["REG_SEASON_GAME_WINNING_GOALS"];
+
+                // get regular season goalie data
+                int ga = json["REG_SEASON_GOALS_AGAINST"];
+                var gaa = json["REG_SEASON_GOALS_AGAINST_AVG"];
+                int shutouts = json["REG_SEASON_SHUTOUTS"];
+                int wins = json["REG_SEASON_WINS"];
+                int losses = json["REG_SEASON_LOSSES"];
+                var winPct = json["REG_SEASON_WIN_PERCENT"];
+
+                // get playoff player data
+                var teamIdPlayoffTemp = json["PLAYOFF_TEAM_ID"];
+                int teamIdPlayoff;
+                if (teamIdPlayoffTemp == null)
+                {
+                  teamIdPlayoff = -1;
+                }
+                else
+                {
+                  teamIdPlayoff = teamIdPlayoffTemp;
+                }
+
+                int gamesPlayoff = json["PLAYOFF_GAMES_PLAYED"];
+                int goalsPlayoff = json["PLAYOFF_GOALS"];
+                int assistsPlayoff = json["PLAYOFF_ASSISTS"];
+                int pointsPlayoff = json["PLAYOFF_POINTS"];
+                int pimPlayoff = json["PLAYOFF_PENALTY_MINUTES"];
+                int ppgPlayoff = json["PLAYOFF_POWERPLAY_GOALS"];
+                int shgPlayoff = json["PLAYOFF_SHORTHANDED_GOALS"];
+                int gwgPlayoff = json["PLAYOFF_GAME_WINNING_GOALS"];
+
+                // get playoff goalie data
+                int gaPlayoff = json["PLAYOFF_GOALS_AGAINST"];
+                var gaaPlayoff = json["PLAYOFF_GOALS_AGAINST_AVG"];
+                int shutoutsPlayoff = json["PLAYOFF_SHUTOUTS"];
+                int winsPlayoff = json["PLAYOFF_WINS"];
+                int lossesPlayoff = json["PLAYOFF_LOSSES"];
+                var winPctPlayoff = json["PLAYOFF_WIN_PERCENT"];
+
+
+                var season = _lo30ContextService.FindSeason(seasonId);
+                var player = _lo30ContextService.FindPlayer(playerId);
+                var team = _lo30ContextService.FindTeam(teamId, errorIfNotFound: false, errorIfMoreThanOneFound: true, populateFully: false);
+                var teamPlayoff = _lo30ContextService.FindTeam(teamIdPlayoff, errorIfNotFound: false, errorIfMoreThanOneFound: true, populateFully: false);
+
+                if (season != null && player != null)
+                {
+                  if (team != null)
+                  {
+                    var stat = new PlayerStatSeason()
+                    {
+                      PlayerId = playerId,
+                      SeasonId = seasonId,
+                      Playoffs = false,
+                      Sub = false,
+                      Games = games,
+                      Goals = goals,
+                      Assists = assists,
+                      Points = points,
+                      PenaltyMinutes = pim,
+                      PowerPlayGoals = ppg,
+                      ShortHandedGoals = shg,
+                      GameWinningGoals = gwg,
+                      UpdatedOn = DateTime.Now
+                    };
+
+                    saved = saved + _lo30ContextService.SaveOrUpdatePlayerStatSeason(stat);
+
+                    if (ga > 0 || shutouts > 0)
+                    {
+                      // either he gave up a goal or got a shutout...identifies goalies
+
+                      var statGoalie = new GoalieStatSeason()
+                      {
+                        PlayerId = playerId,
+                        SeasonId = seasonId,
+                        Playoffs = false,
+                        Sub = false,
+                        Games = games,
+                        GoalsAgainst = ga,
+                        Shutouts = shutouts,
+                        Wins = wins,
+                        UpdatedOn = DateTime.Now
+                      };
+
+                      saved = saved + _lo30ContextService.SaveOrUpdateGoalieStatSeason(statGoalie);
+                    }
+                  }
+                  else
+                  {
+                    // they didn't play in the regular season, so skip
+                  }
+
+
+
+                  if (teamPlayoff != null)
+                  {
+                    var stat = new PlayerStatSeason()
+                    {
+                      PlayerId = playerId,
+                      SeasonId = seasonId,
+                      Playoffs = true,
+                      Sub = false,
+                      Games = gamesPlayoff,
+                      Goals = goalsPlayoff,
+                      Assists = assistsPlayoff,
+                      Points = pointsPlayoff,
+                      PenaltyMinutes = pimPlayoff,
+                      PowerPlayGoals = ppgPlayoff,
+                      ShortHandedGoals = shgPlayoff,
+                      GameWinningGoals = gwgPlayoff,
+                      UpdatedOn = DateTime.Now
+                    };
+
+                    saved = saved + _lo30ContextService.SaveOrUpdatePlayerStatSeason(stat);
+
+                    if (gaPlayoff > 0 || shutoutsPlayoff > 0)
+                    {
+                      // either he gave up a goal or got a shutout...identifies goalies
+
+                      var statGoalie = new GoalieStatSeason()
+                      {
+                        PlayerId = playerId,
+                        SeasonId = seasonId,
+                        Playoffs = true,
+                        Sub = false,
+                        Games = gamesPlayoff,
+                        GoalsAgainst = gaPlayoff,
+                        Shutouts = shutoutsPlayoff,
+                        Wins = winsPlayoff,
+                        UpdatedOn = DateTime.Now
+                      };
+
+                      saved = saved + _lo30ContextService.SaveOrUpdateGoalieStatSeason(statGoalie);
+                    }
+                  }
+                  else
+                  {
+                    // they didn't play in the regular season, so skip
+                  }
+                }
+                else
+                {
+                  // the season or player not found...just output for now
+                  if (season == null && player == null)
+                  {
+                    Print("Data Group 4: PlayerStatsSeason Error: The season and the player is unknown for seasonId: " + seasonId + " playerId:" + playerId);
+                  }
+                  else if (season == null)
+                  {
+                    Print("Data Group 4: PlayerStatsSeason Error: The season is unknown for seasonId: " + seasonId);
+                  }
+                  else
+                  {
+                    Print("Data Group 4: PlayerStatsSeason Error: The player is unknown for playerId: " + playerId);
+                  }
+                }
+              }
+            }
+            catch (Exception ex)
+            {
+              Print("Data Group 4: PlayerStatsSeason Error: Trying to process row " + d + " record: " + json);
+              throw ex;
+            }
+          }
+        
+          Print("Data Group 4: Created PlayerStatsSeason");
+          diffFromLast = DateTime.Now - last;
+          Print("TimeToProcess: " + diffFromLast.ToString());
+
+          _lo30ContextService.ContextSaveChanges();
+          Print("Data Group 4: PlayerStatsSeason Count: " + context.PlayerStatsSeason.Count() + " Saved or Updated:" + saved);
+          diffFromLast = DateTime.Now - last;
+          Print("TimeToProcess: " + diffFromLast.ToString());
+        }*/
+        #endregion
+
         #region populated via other processes
         #region 99:GameOutcomes
         if (context.GameOutcomes.Count() == 0)
@@ -1774,13 +2007,19 @@ namespace App
         var repo = new Lo30Repository(context, _lo30ContextService);
         ProcessingResult results = new ProcessingResult();
 
-        results = repo.ProcessScoreSheetEntries(startingGameId, endingGameId);
-        Print("ProcessScoreSheets.ProcessScoreSheetEntries Modified:" + results.modified + " Time:" + results.time);
+        results = repo.ProcessScoreSheetEntryPenalties(startingGameId, endingGameId);
+        Print("ProcessScoreSheets.ProcessScoreSheetEntryPenalties Modified:" + results.modified + " Time:" + results.time);
 
         if (string.IsNullOrWhiteSpace(results.error))
         {
-          results = repo.ProcessScoreSheetEntryPenalties(startingGameId, endingGameId);
-          Print("ProcessScoreSheets.ProcessScoreSheetEntryPenalties Modified:" + results.modified + " Time:" + results.time);
+          results = repo.ProcessScoreSheetEntries(startingGameId, endingGameId);
+          Print("ProcessScoreSheets.ProcessScoreSheetEntries Modified:" + results.modified + " Time:" + results.time);
+        }
+
+        if (string.IsNullOrWhiteSpace(results.error))
+        {
+          results = repo.UpdateScoreSheetEntriesWithPPAndSH(startingGameId, endingGameId);
+          Print("ProcessScoreSheets.UpdateScoreSheetEntriesWithPPAndSH Modified:" + results.modified + " Time:" + results.time);
         }
 
         if (string.IsNullOrWhiteSpace(results.error))

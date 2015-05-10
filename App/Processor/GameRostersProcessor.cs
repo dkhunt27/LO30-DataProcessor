@@ -250,6 +250,8 @@ namespace App.Processor
       _outputService.Print(methodName + ": Starting");
       LoggerResult log = new LoggerResult("GameRosters");
       /*
+       * LOGIC MOVED INTO STORED PROC
+       * 
       dynamic parsedJson = _accessDatabaseService.ParseObjectFromJsonFile(folderPath + "ScoreSheetEntrySubs.json");
       int countSSES = parsedJson.Count;
       int countSaveOrUpdated = 0;
